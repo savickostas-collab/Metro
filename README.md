@@ -45,6 +45,12 @@ Built in and pinned to Start, all in the same pivot style (big lowercase page he
   so the tile works without location access too.
 - **live tiles setup**: shown once on first run, and it asks for each permission with a note on what it brings to the start screen.
 
+## Updating
+Metro updates itself. Open **metro settings › updates** (or look for the badge on the settings tile).
+It checks this repo's Releases, downloads the newest `MetroLauncher.apk` and hands it to Android's installer.
+The first time, Android asks you to allow Metro to install apps. Every build uses the same signing key,
+so it installs over the old one and keeps your tiles. Android's own "update this app?" prompt may still appear.
+
 ## Notes
 - Font: Open Sans Light (SIL OFL, `app/src/main/assets/fonts/OFL.txt`) stands in for Segoe WP.
 - Icons are white glyphs from each app's monochrome icon. If an app has no usable glyph, its first letter is used instead.

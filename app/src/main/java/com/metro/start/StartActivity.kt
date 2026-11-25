@@ -85,6 +85,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         }
         Apps.load(this) { onAppsLoaded() }
         LockService.sync(this)
+        Updater.cleanup(this)
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
@@ -114,6 +115,8 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         Live.listen(liveListener)
         Media.listen(liveListener)
         Media.attach(this)
+        Updater.listen(liveListener)
+        Updater.autoCheck(this)
         Live.refresh(this)
         if (loaded) {
             checkShuffle()
@@ -137,6 +140,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         Notifs.unlisten(liveListener)
         Live.unlisten(liveListener)
         Media.unlisten(liveListener)
+        Updater.unlisten(liveListener)
         grid.stopLive()
     }
 

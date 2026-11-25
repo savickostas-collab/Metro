@@ -119,6 +119,7 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
         badge = when {
             !tile.live -> 0
             kind == Kind.PHONE -> Live.missed
+            kind == Kind.SETTINGS -> if (Updater.hasUpdate) 1 else 0
             own -> 0
             else -> Notifs.counts[app.pkg] ?: 0
         }
@@ -126,6 +127,7 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
             !tile.live -> null
             kind == Kind.PHONE -> Live.lastMissed?.let { (if (Live.missed > 1) "${Live.missed} missed calls" else "missed call") to it.lowercase() }
             kind == Kind.MUSIC -> Media.track?.let { it.title.lowercase() to it.artist.lowercase() }
+            kind == Kind.SETTINGS -> Updater.release?.let { "update available" to "metro ${it.name}" }
             own -> null
             else -> Notifs.latest[app.pkg]
         }

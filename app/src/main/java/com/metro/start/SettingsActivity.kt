@@ -51,6 +51,15 @@ class SettingsActivity : MetroActivity() {
             }
         }
         for (r in refreshers) r()
+        Updater.listen(updateListener)
+        Updater.resume(this)
+    }
+
+    private val updateListener: () -> Unit = { for (r in refreshers) r() }
+
+    override fun onPause() {
+        super.onPause()
+        Updater.unlisten(updateListener)
     }
 
     override fun back() {
@@ -142,6 +151,13 @@ class SettingsActivity : MetroActivity() {
         refreshers.add { if (lockToggle.checked != prefs.lock && !pendingLock) lockToggle.set(prefs.lock, true) }
         body.addView(lockRow)
         action("preview lock screen", { "see how it looks" }) { LockActivity.show(this) }
+
+        header("updates")
+        action("update metro", { Updater.summary(this) }) { Updater.onTap(this) }
+        val (autoRow, _) = toggleRow("check automatically", "look for a new version a few times a day", prefs.updateCheck) {
+            prefs.updateCheck = it
+        }
+        body.addView(autoRow)
 
         header("system")
         action("home app", { "make metro your home screen" }) {

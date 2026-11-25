@@ -177,6 +177,12 @@ class Prefs(c: Context) {
     var builtins: Int
         get() = sp.getInt("builtins", 0)
         set(v) = sp.edit().putInt("builtins", v).apply()
+    var updateCheck: Boolean
+        get() = sp.getBoolean("updateCheck", true)
+        set(v) = sp.edit().putBoolean("updateCheck", v).apply()
+    var lastUpdateCheck: Long
+        get() = sp.getLong("lastUpdateCheck", 0L)
+        set(v) = sp.edit().putLong("lastUpdateCheck", v).apply()
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false)
         set(v) = sp.edit().putBoolean("onboarded", v).apply()
