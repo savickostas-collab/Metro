@@ -193,9 +193,15 @@ object Glyphs {
         } catch (e: Exception) {
             return null
         }
-        // A good glyph is a shape, not a filled square: reject full-bleed artwork.
+        // Icons drawn with semi-transparent layers trace as grey ghosts. Snap alpha to
+        // solid or clear, keeping a short ramp so edges stay smooth.
         val px = IntArray(SIZE * SIZE)
         bmp.getPixels(px, 0, SIZE, 0, 0, SIZE, SIZE)
+        for (k in px.indices) {
+            val a = px[k] ushr 24
+            px[k] = (crisp(a) shl 24) or 0xFFFFFF
+        }
+        bmp.setPixels(px, 0, SIZE, 0, 0, SIZE, SIZE)
         var on = 0
         var n = 0
         var i = 0
@@ -208,6 +214,9 @@ object Glyphs {
         if (coverage < 0.01f || coverage > 0.5f) return null
         return bmp
     }
+
+    /** Alpha 0..110 -> clear, 110..170 -> ramp, 170.. -> solid. */
+    fun crisp(a: Int): Int = ((a - 110) * 255 / 60).coerceIn(0, 255)
 
     /** Fallback for apps without a usable glyph: the first letter in Metro light. */
     fun letter(label: String): Bitmap {

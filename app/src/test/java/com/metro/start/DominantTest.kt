@@ -31,10 +31,24 @@ class DominantTest {
     }
 
     @Test
-    fun greyOrMonochromeIconsHaveNoColour() {
-        assertEquals(0, Dominant.of(icon(0xFF000000.toInt() to 800, 0xFFFFFFFF.toInt() to 800)))
-        assertEquals(0, Dominant.of(icon(0xFF777777.toInt() to 2000)))
-        assertEquals(0, Dominant.of(icon(0x00FF0000 to 2000))) // fully transparent
+    fun blackAndWhiteIconsGetANeutralTile() {
+        // TikTok-style: mostly black with a white logo and a few coloured edges.
+        val tiktok = icon(0xFF000000.toInt() to 1500, 0xFFFFFFFF.toInt() to 400, 0xFF25F4EE.toInt() to 30, 0xFFFE2C55.toInt() to 30)
+        assertEquals(Dominant.CHARCOAL, Dominant.of(tiktok))
+        // Mostly white or grey: steel.
+        assertEquals(Dominant.STEEL, Dominant.of(icon(0xFFFFFFFF.toInt() to 1500, 0xFF222222.toInt() to 300)))
+        assertEquals(Dominant.STEEL, Dominant.of(icon(0xFF9E9E9E.toInt() to 2000)))
+        // Fully transparent: no colour at all.
+        assertEquals(0, Dominant.of(icon(0x00FF0000 to 2000)))
+    }
+
+    @Test
+    fun glyphAlphaSnapsToSolidOrClear() {
+        assertEquals(0, Glyphs.crisp(0))
+        assertEquals(0, Glyphs.crisp(100))   // faint ghost layer disappears
+        assertEquals(255, Glyphs.crisp(180)) // mostly-solid layer becomes solid
+        assertEquals(255, Glyphs.crisp(255))
+        assertTrue(Glyphs.crisp(140) in 1..254) // edges keep a short ramp
     }
 
     @Test

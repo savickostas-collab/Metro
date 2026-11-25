@@ -194,6 +194,9 @@ class Prefs(c: Context) {
     var lastUpdateCheck: Long
         get() = sp.getLong("lastUpdateCheck", 0L)
         set(v) = sp.edit().putLong("lastUpdateCheck", v).apply()
+    var iconModeSet: Boolean
+        get() = sp.getBoolean("iconModeSet", false)
+        set(v) = sp.edit().putBoolean("iconModeSet", v).apply()
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false)
         set(v) = sp.edit().putBoolean("onboarded", v).apply()

@@ -113,7 +113,7 @@ class TileGrid(context: Context) : ViewGroup(context), TileView.Host {
     fun visibleTiles(): List<TileView> {
         val s = scroller ?: return views
         val top = s.scrollY
-        val bottom = top + s.height
+        val bottom = top + s.height - s.paddingTop
         return views.filter { it.bottom > top && it.top < bottom }
     }
 

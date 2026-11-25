@@ -18,6 +18,8 @@ import kotlin.math.min
  */
 object Dominant {
     private const val BINS = 36
+    const val CHARCOAL = 0xFF2E2E2E.toInt()
+    const val STEEL = 0xFF647687.toInt()
 
     fun of(icon: Drawable?): Int {
         if (icon == null) return 0
@@ -48,6 +50,7 @@ object Dominant {
         val b = FloatArray(BINS)
         var counted = 0
         var opaque = 0
+        var brightness = 0f
         val hsv = FloatArray(3)
         for (p in px) {
             if ((p ushr 24) < 200) continue
@@ -58,6 +61,7 @@ object Dominant {
             toHsv(pr, pg, pb, hsv)
             val s = hsv[1]
             val v = hsv[2]
+            brightness += v
             if (s < 0.28f || v < 0.22f) continue
             val w = s * v
             val bin = ((hsv[0] / 360f) * BINS).toInt().coerceIn(0, BINS - 1)
@@ -67,7 +71,9 @@ object Dominant {
             b[bin] += pb * w
             counted++
         }
-        if (opaque == 0 || counted < opaque * 0.06f || counted < 12) return 0
+        if (opaque == 0) return 0
+        // No real colour (a black or white logo): a neutral tile that matches the icon.
+        if (counted < opaque * 0.06f || counted < 12) return if (brightness / opaque < 0.5f) CHARCOAL else STEEL
         // Neighbouring hue buckets count together, so a gradient isn't split in two.
         var best = -1
         var bestW = 0f

@@ -69,8 +69,13 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Look.load(this)
         prefs = Prefs(this)
+        if (!prefs.iconModeSet) {
+            // Earlier versions saved "multi-color"; switch everyone to icon colours once.
+            prefs.iconModeSet = true
+            if (prefs.mode != Metro.ICON) prefs.mode = Metro.ICON
+        }
+        Look.load(this)
         rev = prefs.rev
         setupWindow()
         build()
@@ -125,7 +130,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         when (launchedFrom) {
             1 -> {
                 Motion.turnstileIn(grid.visibleTiles())
-                arrow.ani(300).alpha(1f).start()
+                arrow.ani(300).alpha(arrowAlpha()).start()
             }
             2 -> Motion.turnstileIn(adapter.visibleRows(list))
             else -> if (stopped && loaded && pager.page == 0) Motion.flyIn(grid.visibleTiles())
@@ -215,6 +220,8 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         // Parallax: the background drifts slower than the tiles; the arrow scrolls with them.
         scroll.setOnScrollChangeListener { _, _, y, _, _ ->
             arrow.translationY = -y.toFloat()
+            arrow.alpha = arrowAlpha()
+            arrow.isClickable = arrow.alpha > 0.5f
             background?.let { bg ->
                 val travel = (bg.height - scroll.height).coerceAtLeast(0)
                 bg.translationY = -(y * 0.25f).coerceAtMost(travel.toFloat())
@@ -293,7 +300,10 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         onInsets { top, bottom, ime ->
             val navH = if (nav != null) dp(48) + bottom else bottom
             nav?.setInset(bottom)
-            grid.topPad = top + dp(52)
+            // Tiles scroll up to the status bar and are cut off there, never drawn under it.
+            scroll.setPadding(0, top, 0, 0)
+            scroll.clipToPadding = true
+            grid.topPad = dp(52)
             grid.bottomPad = navH + dp(28)
             grid.requestLayout()
             (arrow.layoutParams as FrameLayout.LayoutParams).topMargin = top + dp(9)
@@ -312,6 +322,10 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         setTextColor(if (focused) Look.bg else Look.fg)
         setHintTextColor(if (focused) alpha(Look.bg, 0.5f) else Look.fg60)
     }
+
+    /** The arrow scrolls away with the tiles and fades out before it reaches the status bar. */
+    private fun arrowAlpha(): Float =
+        if (grid.editing) 0f else (1f - scroll.scrollY / dp(30).toFloat()).coerceIn(0f, 1f)
 
     private fun onBackPressedCompat() {
         if (hasOverlay) closeOverlays() else back()
@@ -454,7 +468,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
             Toast.makeText(this, "can't open ${a.name}", Toast.LENGTH_SHORT).show()
             launchedFrom = 0
             Motion.reset(grid.views + adapter.visibleRows(list))
-            arrow.alpha = 1f
+            arrow.alpha = arrowAlpha()
         }
     }
 
@@ -469,7 +483,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
 
     override fun onEditChanged(editing: Boolean) {
         pager.locked = editing
-        arrow.ani(220).alpha(if (editing) 0f else 1f).start()
+        arrow.ani(220).alpha(arrowAlpha()).start()
     }
 
     override fun onTilesChanged() {
