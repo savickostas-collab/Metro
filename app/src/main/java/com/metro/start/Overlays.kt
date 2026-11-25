@@ -82,8 +82,8 @@ open class MetroActivity : Activity() {
         o.exit { root.removeView(o.view) }
     }
 
-    fun closeOverlays() {
-        for (o in overlays.toList()) dismiss(o)
+    fun closeOverlays(keep: Overlay? = null) {
+        for (o in overlays.toList()) if (o !== keep) dismiss(o)
     }
 
     @Deprecated("Deprecated in Java")

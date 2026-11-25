@@ -21,6 +21,11 @@ class Tile(
         const val MEDIUM = 1  // 2x2
         const val WIDE = 2    // 4x2
         const val SETTINGS = "metro:settings"
+        const val PHONE = "metro:phone"
+        const val MUSIC = "metro:music"
+        const val WEATHER = "metro:weather"
+        /** Bump when new built-in Metro apps should be added to existing start screens. */
+        const val BUILTINS_VERSION = 1
 
         fun parse(s: String): MutableList<Tile>? = try {
             val a = JSONArray(s)

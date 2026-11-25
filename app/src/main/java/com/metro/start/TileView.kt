@@ -115,8 +115,20 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
     private val small get() = tile.size == Tile.SMALL
 
     fun refreshLive() {
-        badge = if (tile.live) Notifs.counts[app.pkg] ?: 0 else 0
-        note = if (tile.live) Notifs.latest[app.pkg] else null
+        val own = app.pkg == context.packageName
+        badge = when {
+            !tile.live -> 0
+            kind == Kind.PHONE -> Live.missed
+            own -> 0
+            else -> Notifs.counts[app.pkg] ?: 0
+        }
+        note = when {
+            !tile.live -> null
+            kind == Kind.PHONE -> Live.lastMissed?.let { (if (Live.missed > 1) "${Live.missed} missed calls" else "missed call") to it.lowercase() }
+            kind == Kind.MUSIC -> Media.track?.let { it.title.lowercase() to it.artist.lowercase() }
+            own -> null
+            else -> Notifs.latest[app.pkg]
+        }
         if (back && !hasBack()) back = false
         invalidate()
     }
@@ -128,6 +140,7 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
     }
 
     private fun showPhotos() = kind == Kind.PHOTOS && tile.live && !small && Live.photos.isNotEmpty()
+    private fun showArt() = kind == Kind.MUSIC && tile.live && !small && Media.track?.art != null
     private fun showPeople() = kind == Kind.PEOPLE && tile.live && !small && Live.people.size >= 4
     private fun peopleCols() = if (tile.size == Tile.WIDE) 6 else 3
 
@@ -222,7 +235,9 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
             faceBack && kind == Kind.CALENDAR && Live.event != null -> drawEvent(c, w, h)
             faceBack && kind == Kind.WEATHER && Live.weather != null -> drawWeatherBack(c, w, h)
             faceBack && note != null -> drawNote(c, w, h)
+            showArt() -> drawArt(c, w, h)
             kind == Kind.WEATHER && tile.live && !small && Live.weather != null -> drawWeatherFront(c, w, h)
+            kind == Kind.WEATHER && tile.live && small && Live.weather != null -> drawSmallTemp(c, w, h)
             else -> drawFront(c, w, h)
         }
         if (editMode && picked) drawButtons(c)
@@ -321,6 +336,23 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
         drawLabel(c, w, h, shown)
     }
 
+    private fun drawArt(c: Canvas, w: Float, h: Float) {
+        val b = Media.track?.art ?: return
+        cropInto(c, b, 0f, 0f, w, h)
+        drawLabel(c, w, h, shown)
+    }
+
+    private fun drawSmallTemp(c: Canvas, w: Float, h: Float) {
+        val wx = Live.weather ?: return
+        tp.typeface = Metro.light
+        tp.color = Color.WHITE
+        tp.textAlign = Paint.Align.CENTER
+        tp.textSize = h * 0.36f
+        val fm = tp.fontMetrics
+        c.drawText("${wx.temp}°", w / 2f, h / 2f - (fm.ascent + fm.descent) / 2f, tp)
+        tp.textAlign = Paint.Align.LEFT
+    }
+
     private fun drawPeople(c: Canvas, w: Float, h: Float) {
         val list = Live.people
         val cols = peopleCols()
@@ -406,6 +438,8 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
         tp.typeface = Metro.regular
         tp.textSize = sp(13f)
         multiline(c, wx.desc, pad, pad + (fm.descent - fm.ascent) * 0.85f, w - 2 * pad, 1)
+        val icon = if (tile.size == Tile.WIDE) h * 0.5f else h * 0.24f
+        WeatherArt.draw(c, w - pad - icon, if (tile.size == Tile.WIDE) (h - icon) / 2.6f else pad, icon, wx.code, Color.WHITE)
         drawLabel(c, w, h, null)
     }
 

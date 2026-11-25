@@ -33,6 +33,18 @@ Build locally: `./gradlew assembleRelease` → `app/build/outputs/apk/release/ap
 - **Lock screen** (optional): big light clock, date and unread counts. Tap to see it bounce, swipe up to unlock.
   It needs the "display over other apps" permission and shows a quiet ongoing notification.
 
+## Metro apps
+Built in and pinned to Start, all in the same pivot style (big lowercase page headers you swipe between):
+- **phone**: history (missed calls in the accent color, repeat calls folded as "missed (3)"), a keypad with
+  key tones and contact matching, and contacts with favourites and the letter jump grid. The tile shows missed calls.
+  Metro can also be picked as the dialer when another app opens a phone number. Android's own in-call screen still handles the call.
+- **music**: follows whatever Spotify (or any player) is playing through notification access, so no login is needed.
+  It shows album art, title, artist and a seek bar, with previous, play/pause and next plus Spotify's own actions (like, shuffle and so on).
+  "recent" lists songs you've played, and tapping one plays it again. The wide tile shows the album art and flips to the song name.
+- **weather**: today (details, sunrise and sunset), the next 24 hours, and the week, from Open-Meteo. It uses your location or a city you pick,
+  so the tile works without location access too.
+- **live tiles setup**: shown once on first run, and it asks for each permission with a note on what it brings to the start screen.
+
 ## Notes
 - Font: Open Sans Light (SIL OFL, `app/src/main/assets/fonts/OFL.txt`) stands in for Segoe WP.
 - Icons are white glyphs from each app's monochrome icon. If an app has no usable glyph, its first letter is used instead.

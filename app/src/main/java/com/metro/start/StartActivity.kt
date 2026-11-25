@@ -109,8 +109,11 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
             recreate()
             return
         }
+        setupPage?.refresh()
         Notifs.listen(liveListener)
         Live.listen(liveListener)
+        Media.listen(liveListener)
+        Media.attach(this)
         Live.refresh(this)
         if (loaded) {
             checkShuffle()
@@ -133,6 +136,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         super.onPause()
         Notifs.unlisten(liveListener)
         Live.unlisten(liveListener)
+        Media.unlisten(liveListener)
         grid.stopLive()
     }
 
@@ -140,7 +144,8 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         super.onStop()
         stopped = true
         grid.exitEdit()
-        closeOverlays()
+        // The live-tile setup page stays open while you grant access in Android settings.
+        closeOverlays(keep = setupPage)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -334,11 +339,20 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         if (!loaded) {
             val saved = prefs.tiles?.let { Tile.parse(it) }
             val tiles = saved ?: defaultTiles().also { TileColors.separate(it) }
+            if (saved != null && prefs.builtins < Tile.BUILTINS_VERSION) {
+                // Existing start screens get the new Metro apps pinned at the top, once.
+                val add = listOf(Tile.PHONE to Tile.MEDIUM, Tile.WEATHER to Tile.MEDIUM, Tile.MUSIC to Tile.WIDE)
+                    .filter { (k, _) -> saved.none { it.key == k } }
+                saved.addAll(0, add.map { (k, size) -> Tile(k, size, TileColors.next(prefs)) })
+                TileColors.separate(saved)
+            }
+            prefs.builtins = Tile.BUILTINS_VERSION
             grid.setTiles(tiles.mapNotNull { t -> Apps.byKey[t.key]?.let { TileView(this, t, it) } })
             loaded = true
-            if (saved == null) save()
+            save()
             checkShuffle()
             refreshLive()
+            if (!prefs.onboarded) grid.postDelayed({ if (!isFinishing) show(LiveSetup(this)) }, 900)
             if (pager.page == 0) grid.doOnPreDraw { Motion.flyIn(grid.visibleTiles()) }
         } else {
             var changed = false
@@ -362,19 +376,20 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
 
         fun sel(cat: String) = res(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, cat))
         fun kind(k: Kind) = Apps.list.firstOrNull { it.kind == k }?.pkg
+        // Entries are either a Metro key ("metro:...") or another app's package.
         val plan = listOf(
-            res(Intent(Intent.ACTION_DIAL)) to Tile.MEDIUM,
+            Tile.PHONE to Tile.MEDIUM,
             kind(Kind.PEOPLE) to Tile.MEDIUM,
             kind(Kind.MESSAGES) to Tile.MEDIUM,
-            sel(Intent.CATEGORY_APP_EMAIL) to Tile.MEDIUM,
+            Tile.WEATHER to Tile.MEDIUM,
+            Tile.MUSIC to Tile.WIDE,
             kind(Kind.PHOTOS) to Tile.WIDE,
             kind(Kind.CALENDAR) to Tile.MEDIUM,
             sel(Intent.CATEGORY_APP_BROWSER) to Tile.SMALL,
             res(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)) to Tile.SMALL,
             "com.android.vending" to Tile.SMALL,
-            packageName to Tile.SMALL,
-            kind(Kind.WEATHER) to Tile.MEDIUM,
-            sel(Intent.CATEGORY_APP_MUSIC) to Tile.MEDIUM,
+            Tile.SETTINGS to Tile.SMALL,
+            sel(Intent.CATEGORY_APP_EMAIL) to Tile.MEDIUM,
             sel(Intent.CATEGORY_APP_MAPS) to Tile.SMALL,
             res(Intent(Settings.ACTION_SETTINGS)) to Tile.SMALL
         )
@@ -382,8 +397,8 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         val used = HashSet<String>()
         for ((pkg, size) in plan) {
             if (pkg == null) continue
-            val app = if (pkg == packageName) Apps.byKey[Tile.SETTINGS]
-            else Apps.list.firstOrNull { it.pkg == pkg && it.kind != Kind.SETTINGS }
+            val app = if (pkg.startsWith("metro:")) Apps.byKey[pkg]
+            else Apps.list.firstOrNull { it.pkg == pkg && it.pkg != packageName }
             if (app == null || !used.add(app.key)) continue
             out.add(Tile(app.key, size, TileColors.next(prefs)))
         }
@@ -421,8 +436,8 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
     private fun launch(a: AppInfo) {
         try {
             val opts = ActivityOptions.makeCustomAnimation(this, R.anim.app_enter, R.anim.hold).toBundle()
-            if (a.kind == Kind.SETTINGS) {
-                startActivity(Intent(this, SettingsActivity::class.java), opts)
+            if (a.pkg == packageName) {
+                startActivity(Intent().setClassName(this, a.cls), opts)
                 return
             }
             val i = Intent(Intent.ACTION_MAIN)
@@ -492,7 +507,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
         val pinned = grid.views.any { it.tile.key == a.key }
         val items = ArrayList<Pair<String, () -> Unit>>()
         items.add((if (pinned) "unpin from start" else "pin to start") to { if (pinned) unpin(a) else pin(a) })
-        if (a.kind != Kind.SETTINGS) {
+        if (a.pkg != packageName) {
             if (!a.system) items.add("uninstall" to {
                 startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${a.pkg}")))
             })
@@ -520,6 +535,15 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
             onTilesChanged()
         }
     }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        Live.invalidateWeather()
+        Live.refresh(this, force = true)
+        setupPage?.refresh()
+    }
+
+    var setupPage: LiveSetup? = null
 
     fun showJumpGrid() {
         hideKeyboard()

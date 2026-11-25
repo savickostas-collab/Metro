@@ -162,6 +162,24 @@ class Prefs(c: Context) {
     var tiles: String?
         get() = sp.getString("tiles", null)
         set(v) = sp.edit().putString("tiles", v).apply()
+    /** Chosen weather city as JSON {name, lat, lon}, or null to use location. */
+    var city: String?
+        get() = sp.getString("city", null)
+        set(v) = sp.edit().putString("city", v).apply()
+    /** Missed calls older than this have been seen in the Metro phone app. */
+    var phoneSeen: Long
+        get() = sp.getLong("phoneSeen", 0L)
+        set(v) = sp.edit().putLong("phoneSeen", v).apply()
+    var recentTracks: String?
+        get() = sp.getString("recentTracks", null)
+        set(v) = sp.edit().putString("recentTracks", v).apply()
+    /** Version of the built-in Metro apps last added to start. */
+    var builtins: Int
+        get() = sp.getInt("builtins", 0)
+        set(v) = sp.edit().putInt("builtins", v).apply()
+    var onboarded: Boolean
+        get() = sp.getBoolean("onboarded", false)
+        set(v) = sp.edit().putBoolean("onboarded", v).apply()
 
     fun bumpLook() = look { }
 

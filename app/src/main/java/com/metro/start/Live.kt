@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.CalendarContract
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.service.notification.NotificationListenerService
@@ -26,12 +27,15 @@ import androidx.core.app.NotificationManagerCompat
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // ===================================================================== notifications
@@ -52,7 +56,10 @@ object Notifs {
 
 /** Counts unread notifications per app and keeps the newest one for the back of the tile. */
 class NotificationFeed : NotificationListenerService() {
-    override fun onListenerConnected() = rebuild()
+    override fun onListenerConnected() {
+        rebuild()
+        Media.attach(applicationContext)
+    }
     override fun onNotificationPosted(sbn: StatusBarNotification?) = rebuild()
     override fun onNotificationRemoved(sbn: StatusBarNotification?) = rebuild()
 
@@ -93,21 +100,46 @@ class NotificationFeed : NotificationListenerService() {
     }
 }
 
-// ===================================================================== photos, people, calendar, weather
+// ===================================================================== photos, people, calendar, weather, calls
 
 class CalEvent(val title: String, val time: String, val place: String)
-class Weather(val temp: Int, val desc: String, val hi: Int, val lo: Int, val place: String)
+class Hour(val label: String, val temp: Int, val code: Int, val rain: Int)
+class Day(val label: String, val code: Int, val hi: Int, val lo: Int, val rain: Int)
+class City(val name: String, val detail: String, val lat: Double, val lon: Double) {
+    fun json(): String = JSONObject().put("name", name).put("detail", detail).put("lat", lat).put("lon", lon).toString()
+
+    companion object {
+        fun parse(s: String?): City? = try {
+            if (s == null) null else JSONObject(s).let {
+                City(it.getString("name"), it.optString("detail"), it.getDouble("lat"), it.getDouble("lon"))
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+
+class Weather(
+    val temp: Int, val desc: String, val hi: Int, val lo: Int, val place: String,
+    val code: Int, val feels: Int, val humidity: Int, val wind: Int, val windUnit: String,
+    val sunrise: String, val sunset: String,
+    val hours: List<Hour>, val days: List<Day>, val updated: Long
+)
 
 object Live {
     @Volatile var photos: List<Bitmap> = emptyList(); private set
     @Volatile var people: List<Bitmap> = emptyList(); private set
     @Volatile var event: CalEvent? = null; private set
     @Volatile var weather: Weather? = null; private set
+    @Volatile var weatherError = false; private set
+    @Volatile var missed = 0; private set
+    @Volatile var lastMissed: String? = null; private set
 
     private var photosAt = 0L
     private var peopleAt = 0L
     private var eventAt = 0L
     private var weatherAt = 0L
+    private var callsAt = 0L
 
     private val exec = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -126,6 +158,10 @@ object Live {
 
     fun invalidateWeather() {
         weatherAt = 0L
+    }
+
+    fun invalidateCalls() {
+        callsAt = 0L
     }
 
     fun refresh(c: Context, force: Boolean = false) {
@@ -148,12 +184,27 @@ object Live {
                 event = if (granted(app, Manifest.permission.READ_CALENDAR)) safe { loadEvent(app) } else null
                 any = true
             }
+            if (force || now - callsAt > 20_000) {
+                callsAt = now
+                if (granted(app, Manifest.permission.READ_CALL_LOG)) safe { loadMissed(app) } else {
+                    missed = 0
+                    lastMissed = null
+                }
+                any = true
+            }
             if (force || now - weatherAt > 30 * 60_000) {
                 weatherAt = now
-                if (granted(app, Manifest.permission.ACCESS_COARSE_LOCATION)) {
+                val city = City.parse(Prefs(app).city)
+                if (city != null) {
+                    val w = safe { fetchWeather(app, city.lat, city.lon, city.name) }
+                    if (w != null) weather = w else weatherAt = 0L
+                    weatherError = w == null
+                } else if (granted(app, Manifest.permission.ACCESS_COARSE_LOCATION)) {
                     val loc = safe { location(app) }
                     if (loc != null) {
-                        safe { loadWeather(app, loc) }?.let { weather = it }
+                        val w = safe { fetchWeather(app, loc.latitude, loc.longitude, null) }
+                        if (w != null) weather = w else weatherAt = 0L
+                        weatherError = w == null
                     } else {
                         weatherAt = 0L
                     }
@@ -170,6 +221,26 @@ object Live {
         f()
     } catch (e: Throwable) {
         null
+    }
+
+    private fun loadMissed(c: Context) {
+        val seen = Prefs(c).phoneSeen
+        var n = 0
+        var who: String? = null
+        c.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            arrayOf(CallLog.Calls.CACHED_NAME, CallLog.Calls.NUMBER),
+            "${CallLog.Calls.TYPE} = ? AND ${CallLog.Calls.NEW} = 1 AND ${CallLog.Calls.DATE} > ?",
+            arrayOf(CallLog.Calls.MISSED_TYPE.toString(), seen.toString()),
+            "${CallLog.Calls.DATE} DESC"
+        )?.use { cur ->
+            while (cur.moveToNext()) {
+                if (n == 0) who = cur.getString(0)?.takeIf { it.isNotBlank() } ?: cur.getString(1)
+                n++
+            }
+        }
+        missed = n
+        lastMissed = who
     }
 
     private fun loadPhotos(c: Context): List<Bitmap> {
@@ -234,26 +305,10 @@ object Live {
                 val title = cur.getString(0)?.takeIf { it.isNotBlank() } ?: "busy"
                 val begin = cur.getLong(1)
                 val allDay = cur.getInt(3) == 1
-                return CalEvent(title, whenText(c, begin, allDay), cur.getString(4).orEmpty())
+                return CalEvent(title, When.text(c, begin, allDay), cur.getString(4).orEmpty())
             }
         }
         return null
-    }
-
-    private fun whenText(c: Context, t: Long, allDay: Boolean): String {
-        val cal = Calendar.getInstance()
-        val today = cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
-        cal.add(Calendar.DAY_OF_YEAR, 1)
-        val tomorrow = cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
-        cal.timeInMillis = t
-        val day = cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
-        val dayText = when (day) {
-            today -> "today"
-            tomorrow -> "tomorrow"
-            else -> DateFormat.format("EEEE", Date(t)).toString().lowercase(Locale.getDefault())
-        }
-        if (allDay) return "$dayText, all day"
-        return "$dayText ${DateFormat.getTimeFormat(c).format(Date(t)).lowercase(Locale.getDefault())}"
     }
 
     @Suppress("MissingPermission")
@@ -277,8 +332,9 @@ object Live {
             if (provider != null) {
                 lm.getCurrentLocation(provider, null, exec) { loc ->
                     if (loc != null) {
-                        safe { loadWeather(c, loc) }?.let {
+                        safe { fetchWeather(c, loc.latitude, loc.longitude, null) }?.let {
                             weather = it
+                            weatherError = false
                             weatherAt = SystemClock.elapsedRealtime()
                             changed()
                         }
@@ -289,49 +345,118 @@ object Live {
         return best
     }
 
-    private fun fahrenheit(c: Context): Boolean = when (Prefs(c).tempUnit) {
+    fun fahrenheit(c: Context): Boolean = when (Prefs(c).tempUnit) {
         1 -> false
         2 -> true
         else -> Locale.getDefault().country in setOf("US", "LR", "MM", "BS", "BZ", "KY", "PW")
     }
 
-    private fun loadWeather(c: Context, loc: Location): Weather? {
-        val f = fahrenheit(c)
-        val url = String.format(
-            Locale.US,
-            "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f" +
-                "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min" +
-                "&forecast_days=1&timezone=auto%s",
-            loc.latitude, loc.longitude, if (f) "&temperature_unit=fahrenheit" else ""
-        )
+    private fun get(url: String): String {
         val con = URL(url).openConnection() as HttpURLConnection
         con.connectTimeout = 8000
         con.readTimeout = 8000
-        val body = try {
+        return try {
             con.inputStream.bufferedReader().use { it.readText() }
         } finally {
             con.disconnect()
         }
-        val j = JSONObject(body)
+    }
+
+    private fun fetchWeather(c: Context, lat: Double, lon: Double, placeName: String?): Weather {
+        val f = fahrenheit(c)
+        val url = String.format(
+            Locale.US,
+            "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f" +
+                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code" +
+                "&hourly=temperature_2m,weather_code,precipitation_probability" +
+                "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset" +
+                "&forecast_days=7&timezone=auto%s",
+            lat, lon, if (f) "&temperature_unit=fahrenheit&wind_speed_unit=mph" else ""
+        )
+        val j = JSONObject(get(url))
         val cur = j.getJSONObject("current")
+        val hourly = j.getJSONObject("hourly")
         val daily = j.getJSONObject("daily")
-        val place = try {
+
+        // Hourly: the next 24 hours, starting with the current one.
+        val nowHour = cur.getString("time").take(13)
+        val hTimes = hourly.getJSONArray("time")
+        val hTemp = hourly.getJSONArray("temperature_2m")
+        val hCode = hourly.getJSONArray("weather_code")
+        val hRain = hourly.optJSONArray("precipitation_probability")
+        val hours = ArrayList<Hour>()
+        for (i in 0 until hTimes.length()) {
+            val t = hTimes.getString(i)
+            if (t.take(13) < nowHour) continue
+            if (hours.size >= 24) break
+            val label = if (hours.isEmpty()) "now" else When.clock(c, t.substring(11, 13).toInt(), 0, hourOnly = true)
+            hours.add(Hour(label, hTemp.getDouble(i).roundToInt(), hCode.optInt(i), hRain?.optInt(i) ?: 0))
+        }
+
+        val dTimes = daily.getJSONArray("time")
+        val days = ArrayList<Day>()
+        for (i in 0 until dTimes.length()) {
+            val label = when (i) {
+                0 -> "today"
+                1 -> "tomorrow"
+                else -> When.dayName(dTimes.getString(i))
+            }
+            days.add(
+                Day(
+                    label, daily.getJSONArray("weather_code").optInt(i),
+                    daily.getJSONArray("temperature_2m_max").getDouble(i).roundToInt(),
+                    daily.getJSONArray("temperature_2m_min").getDouble(i).roundToInt(),
+                    daily.optJSONArray("precipitation_probability_max")?.optInt(i) ?: 0
+                )
+            )
+        }
+        fun sun(key: String): String = try {
+            val s = daily.getJSONArray(key).getString(0)
+            When.clock(c, s.substring(11, 13).toInt(), s.substring(14, 16).toInt())
+        } catch (e: Exception) {
+            ""
+        }
+
+        val place = placeName ?: try {
             @Suppress("DEPRECATION")
-            Geocoder(c, Locale.getDefault()).getFromLocation(loc.latitude, loc.longitude, 1)
+            Geocoder(c, Locale.getDefault()).getFromLocation(lat, lon, 1)
                 ?.firstOrNull()?.let { it.locality ?: it.subAdminArea ?: it.adminArea }
         } catch (e: Exception) {
             null
         }
+        val code = cur.getInt("weather_code")
         return Weather(
             cur.getDouble("temperature_2m").roundToInt(),
-            describe(cur.getInt("weather_code")),
-            daily.getJSONArray("temperature_2m_max").getDouble(0).roundToInt(),
-            daily.getJSONArray("temperature_2m_min").getDouble(0).roundToInt(),
-            place?.lowercase(Locale.getDefault()).orEmpty()
+            describe(code),
+            days.firstOrNull()?.hi ?: 0,
+            days.firstOrNull()?.lo ?: 0,
+            place?.lowercase(Locale.getDefault()).orEmpty(),
+            code,
+            cur.optDouble("apparent_temperature", 0.0).roundToInt(),
+            cur.optDouble("relative_humidity_2m", 0.0).roundToInt(),
+            cur.optDouble("wind_speed_10m", 0.0).roundToInt(),
+            if (f) "mph" else "km/h",
+            sun("sunrise"), sun("sunset"),
+            hours, days, System.currentTimeMillis()
         )
     }
 
-    private fun describe(code: Int) = when (code) {
+    /** City search for weather without location access (blocking; call off the main thread). */
+    fun searchCities(q: String): List<City> {
+        val url = "https://geocoding-api.open-meteo.com/v1/search?count=8&format=json&language=" +
+            Locale.getDefault().language + "&name=" + URLEncoder.encode(q, "UTF-8")
+        val r = JSONObject(get(url)).optJSONArray("results") ?: return emptyList()
+        return List(r.length()) { i ->
+            val o = r.getJSONObject(i)
+            val detail = listOf(o.optString("admin1"), o.optString("country")).filter { it.isNotBlank() }.joinToString(", ")
+            City(
+                o.getString("name").lowercase(Locale.getDefault()), detail.lowercase(Locale.getDefault()),
+                o.getDouble("latitude"), o.getDouble("longitude")
+            )
+        }
+    }
+
+    fun describe(code: Int) = when (code) {
         0 -> "clear"
         1 -> "mostly clear"
         2 -> "partly cloudy"
@@ -344,5 +469,44 @@ object Live {
         85, 86 -> "snow showers"
         in 95..99 -> "thunderstorms"
         else -> ""
+    }
+}
+
+/** Lowercase, Metro-style dates and times. */
+object When {
+    fun clock(c: Context, h: Int, m: Int, hourOnly: Boolean = false): String {
+        if (DateFormat.is24HourFormat(c)) return String.format(Locale.US, "%02d:%02d", h, m)
+        val h12 = if (h % 12 == 0) 12 else h % 12
+        val ap = if (h < 12) "am" else "pm"
+        return if (hourOnly) "$h12 $ap" else String.format(Locale.US, "%d:%02d %s", h12, m, ap)
+    }
+
+    fun dayName(isoDate: String): String = try {
+        val d = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(isoDate)
+        DateFormat.format("EEEE", d).toString().lowercase(Locale.getDefault())
+    } catch (e: Exception) {
+        isoDate
+    }
+
+    fun text(c: Context, t: Long, allDay: Boolean = false): String {
+        val cal = Calendar.getInstance()
+        val today = cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
+        cal.add(Calendar.DAY_OF_YEAR, 1)
+        val tomorrow = cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
+        cal.add(Calendar.DAY_OF_YEAR, -2)
+        val yesterday = cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
+        cal.timeInMillis = t
+        val day = cal.get(Calendar.DAY_OF_YEAR) to cal.get(Calendar.YEAR)
+        val age = System.currentTimeMillis() - t
+        val dayText = when {
+            day == today -> "today"
+            day == tomorrow -> "tomorrow"
+            day == yesterday -> "yesterday"
+            abs(age) < 6L * 86_400_000L -> DateFormat.format("EEEE", Date(t)).toString().lowercase(Locale.getDefault())
+            else -> DateFormat.getMediumDateFormat(c).format(Date(t)).lowercase(Locale.getDefault())
+        }
+        if (allDay) return "$dayText, all day"
+        val time = clock(c, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
+        return if (day == today) time else "$dayText $time"
     }
 }

@@ -12,6 +12,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
@@ -26,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /** What a tile knows how to show when it is live. */
-enum class Kind { APP, MESSAGES, PHOTOS, PEOPLE, CALENDAR, WEATHER, SETTINGS }
+enum class Kind { APP, MESSAGES, PHOTOS, PEOPLE, CALENDAR, WEATHER, SETTINGS, PHONE, MUSIC }
 
 class AppInfo(
     val key: String,
@@ -107,12 +108,12 @@ object Apps {
                 ?: if (ai.packageName.contains("weather", ignoreCase = true)) Kind.WEATHER else Kind.APP
             out.add(AppInfo(key, label, ai.packageName, ai.name, system, icon, glyph, kind))
         }
-        out.add(
-            AppInfo(
-                Tile.SETTINGS, "metro settings", c.packageName, SettingsActivity::class.java.name,
-                true, null, Glyphs.gear(), Kind.SETTINGS
-            )
-        )
+        fun builtin(key: String, label: String, cls: Class<*>, glyph: Bitmap, kind: Kind) =
+            out.add(AppInfo(key, label, c.packageName, cls.name, true, null, glyph, kind))
+        builtin(Tile.SETTINGS, "metro settings", SettingsActivity::class.java, Glyphs.gear(), Kind.SETTINGS)
+        builtin(Tile.PHONE, "phone", PhoneActivity::class.java, Glyphs.phone(), Kind.PHONE)
+        builtin(Tile.MUSIC, "music", MusicActivity::class.java, Glyphs.music(), Kind.MUSIC)
+        builtin(Tile.WEATHER, "weather", WeatherActivity::class.java, Glyphs.weather(), Kind.WEATHER)
         val collator = Collator.getInstance()
         out.sortWith { a, b ->
             when {
@@ -212,6 +213,67 @@ object Glyphs {
         val ch = label.trim().firstOrNull()?.lowercase() ?: "?"
         val fm = p.fontMetrics
         Canvas(bmp).drawText(ch, SIZE / 2f, SIZE / 2f - (fm.ascent + fm.descent) / 2f, p)
+        return bmp
+    }
+
+    private fun canvas(): Pair<Bitmap, Canvas> {
+        val bmp = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+        return bmp to Canvas(bmp)
+    }
+
+    /** Classic handset: a flat handle with ear and mouth pieces, tilted. */
+    fun phone(): Bitmap {
+        val (bmp, cv) = canvas()
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        cv.rotate(-135f, SIZE / 2f, SIZE / 2f)
+        val cx = 72f
+        val cy = 112f
+        val r = 56f
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 18f
+        cv.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), 228f, 84f, false, p)
+        p.style = Paint.Style.FILL
+        for (deg in floatArrayOf(228f, 312f)) {
+            val a = Math.toRadians(deg.toDouble())
+            val ex = cx + r * Math.cos(a).toFloat()
+            val ey = cy + r * Math.sin(a).toFloat()
+            val ix = -Math.cos(a).toFloat()
+            val iy = -Math.sin(a).toFloat()
+            val px = -iy
+            val py = ix
+            val len = 30f
+            val half = 13f
+            val path = android.graphics.Path().apply {
+                moveTo(ex + px * half - ix * 6, ey + py * half - iy * 6)
+                lineTo(ex - px * half - ix * 6, ey - py * half - iy * 6)
+                lineTo(ex - px * half + ix * len, ey - py * half + iy * len)
+                lineTo(ex + px * half + ix * len, ey + py * half + iy * len)
+                close()
+            }
+            cv.drawPath(path, p)
+        }
+        return bmp
+    }
+
+    /** Two beamed notes. */
+    fun music(): Bitmap {
+        val (bmp, cv) = canvas()
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        cv.drawOval(RectF(30f, 92f, 64f, 116f), p)
+        cv.drawOval(RectF(82f, 80f, 116f, 104f), p)
+        cv.drawRect(56f, 40f, 64f, 104f, p)
+        cv.drawRect(108f, 28f, 116f, 92f, p)
+        val path = android.graphics.Path().apply {
+            moveTo(56f, 40f); lineTo(116f, 28f); lineTo(116f, 44f); lineTo(56f, 56f); close()
+        }
+        cv.drawPath(path, p)
+        return bmp
+    }
+
+    /** Sun behind a cloud. */
+    fun weather(): Bitmap {
+        val (bmp, cv) = canvas()
+        WeatherArt.draw(cv, 18f, 18f, SIZE - 36f, 2, Color.WHITE)
         return bmp
     }
 

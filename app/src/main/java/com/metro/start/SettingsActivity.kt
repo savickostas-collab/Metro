@@ -105,6 +105,7 @@ class SettingsActivity : MetroActivity() {
                 startActivity(Intent(Settings.ACTION_SETTINGS))
             }
         }
+        permissionRow("calls", "missed calls on the phone tile and call history", Manifest.permission.READ_CALL_LOG)
         permissionRow("photos", "recent pictures on the photos tile", Live.photoPermission)
         permissionRow("people", "contact photos on the people tile", Manifest.permission.READ_CONTACTS)
         permissionRow("calendar", "your next event on the calendar tile", Manifest.permission.READ_CALENDAR)

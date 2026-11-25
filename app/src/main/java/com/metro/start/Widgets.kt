@@ -97,7 +97,7 @@ class Pager(context: Context) : ViewGroup(context) {
         val dx = e.x - downX
         val dy = e.y - downY
         if (abs(dx) < slop * 1.5f || abs(dx) < abs(dy) * 1.4f) return false
-        return (dx < 0 && page == 0) || (dx > 0 && page == 1)
+        return (dx < 0 && page < childCount - 1) || (dx > 0 && page > 0)
     }
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
@@ -135,7 +135,7 @@ class Pager(context: Context) : ViewGroup(context) {
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging && startsDrag(e)) beginDrag(e)
                 if (dragging) {
-                    offset = (startOffset - (e.x - downX)).coerceIn(0f, width.toFloat())
+                    offset = (startOffset - (e.x - downX)).coerceIn(0f, (childCount - 1) * width.toFloat())
                     apply()
                 }
             }
@@ -145,12 +145,12 @@ class Pager(context: Context) : ViewGroup(context) {
                     t?.computeCurrentVelocity(1000)
                     val vx = t?.xVelocity ?: 0f
                     val fling = dpf(600f)
+                    val cur = offset / width
                     val target = when {
-                        vx < -fling -> 1
-                        vx > fling -> 0
-                        offset > width / 2f -> 1
-                        else -> 0
-                    }
+                        vx < -fling -> kotlin.math.floor(cur).toInt() + 1
+                        vx > fling -> kotlin.math.floor(cur).toInt()
+                        else -> kotlin.math.round(cur).toInt()
+                    }.coerceIn(0, childCount - 1)
                     go(target)
                 }
                 dragging = false
