@@ -39,6 +39,8 @@ object Metro {
     const val MULTI = 0
     const val SINGLE = 1
     const val SHUFFLE = 2
+    /** Each tile takes the main colour of its app's icon. */
+    const val ICON = 3
 
     lateinit var light: Typeface
         private set
@@ -82,7 +84,7 @@ object Metro {
 object Look {
     var dark = true
     var accent = Metro.PALETTE[0]
-    var mode = Metro.MULTI
+    var mode = Metro.ICON
     var glyphs = true
     var navBar = true
 
@@ -96,7 +98,16 @@ object Look {
     /** Dark theme keeps full saturation; light theme is about 10% darker. */
     fun shade(c: Int): Int = if (dark) c else scale(c, 0.9f)
 
-    fun tileColor(t: Tile): Int = shade(if (mode == Metro.SINGLE) accent else t.color)
+    fun tileColor(t: Tile): Int = shade(
+        when {
+            mode == Metro.SINGLE -> accent
+            mode == Metro.ICON && !t.userColor -> Apps.byKey[t.key]?.dominant?.takeIf { it != 0 } ?: t.color
+            else -> t.color
+        }
+    )
+
+    /** Colours here can be anything, so only multi and shuffle keep neighbours apart. */
+    val separates: Boolean get() = mode == Metro.MULTI || mode == Metro.SHUFFLE
 
     /** App-list letter squares: one accent in single mode, a mosaic otherwise. */
     fun letterColor(ch: Char): Int {
@@ -137,7 +148,7 @@ class Prefs(c: Context) {
         get() = sp.getInt("accent", Metro.PALETTE[0])
         set(v) = look { putInt("accent", v) }
     var mode: Int
-        get() = sp.getInt("mode", Metro.MULTI)
+        get() = sp.getInt("mode", Metro.ICON)
         set(v) = look { putInt("mode", v); putInt("shuffleDay", -1) }
     var glyphs: Boolean
         get() = sp.getBoolean("glyphs", true)

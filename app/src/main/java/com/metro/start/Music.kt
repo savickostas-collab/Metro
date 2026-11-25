@@ -314,7 +314,7 @@ class MusicActivity : PivotActivity() {
         }
         artBox.setBackgroundColor(Look.accentShade)
         artGlyph = ImageView(this).apply {
-            setImageBitmap(Glyphs.music())
+            setImageBitmap(Glyphs.vector(this@MusicActivity, R.drawable.g_music))
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
         art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }

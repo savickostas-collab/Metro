@@ -433,6 +433,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
 
     fun iconColor(a: AppInfo): Int {
         if (Look.mode == Metro.SINGLE) return Look.accentShade
+        if (Look.mode == Metro.ICON && a.dominant != 0) return Look.shade(a.dominant)
         grid.views.firstOrNull { it.tile.key == a.key }?.let { return Look.tileColor(it.tile) }
         return Look.shade(Metro.PALETTE[abs(a.pkg.hashCode() % Metro.PALETTE.size)])
     }
@@ -472,7 +473,7 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
     }
 
     override fun onTilesChanged() {
-        if (Look.mode != Metro.SINGLE && TileColors.separate(grid.tiles())) {
+        if (Look.separates && TileColors.separate(grid.tiles())) {
             for (v in grid.views) v.refreshColor(true)
         }
         save()
@@ -493,6 +494,11 @@ class StartActivity : MetroActivity(), TileGrid.Listener {
                     v.tile.live = on
                     v.refreshLive()
                     save()
+                },
+                onIconColor = {
+                    v.tile.userColor = false
+                    v.refreshColor(true)
+                    onTilesChanged()
                 }
             )
         )

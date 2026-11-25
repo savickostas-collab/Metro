@@ -207,7 +207,8 @@ class ColorPicker(
     private val current: Int,
     private val live: Boolean?,
     private val onColor: (Int) -> Unit,
-    private val onLive: ((Boolean) -> Unit)? = null
+    private val onLive: ((Boolean) -> Unit)? = null,
+    private val onIconColor: (() -> Unit)? = null
 ) : Overlay(act) {
     private lateinit var content: LinearLayout
 
@@ -241,6 +242,13 @@ class ColorPicker(
             row?.addView(sw, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply {
                 if (i % 4 != 3) rightMargin = c.dp(10)
             })
+        }
+
+        if (onIconColor != null && Look.mode == Metro.ICON) {
+            content.addView(c.metroButton("use the icon's color") {
+                onIconColor.invoke()
+                close()
+            }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = c.dp(16) })
         }
 
         content.addView(header(c, "custom"))

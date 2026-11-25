@@ -37,7 +37,9 @@ class AppInfo(
     val system: Boolean,
     val icon: Drawable?,
     val glyph: Bitmap,
-    val kind: Kind
+    val kind: Kind,
+    /** Main colour of the app's icon, ready for a tile; 0 if the icon has none. */
+    val dominant: Int = 0
 ) {
     val name: String = label.lowercase(Locale.getDefault())
     val letter: Char = letterOf(name)
@@ -62,6 +64,7 @@ object Apps {
     private val exec = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private val glyphCache = ConcurrentHashMap<String, Bitmap>()
+    private val colorCache = ConcurrentHashMap<String, Int>()
 
     fun load(c: Context, done: () -> Unit) {
         val app = c.applicationContext
@@ -84,6 +87,7 @@ object Apps {
     private fun query(c: Context): List<AppInfo> {
         val pm = c.packageManager
         val roles = roles(c, pm)
+        val glyphRoles = GlyphRoles.find(c, pm)
         val out = ArrayList<AppInfo>()
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         for (ri in pm.queryIntentActivities(intent, 0)) {
@@ -102,18 +106,22 @@ object Apps {
                 0L
             }
             val gk = "$key@$updated"
-            val glyph = glyphCache[gk] ?: Glyphs.fromIcon(icon, label).also { glyphCache[gk] = it }
+            val drawn = glyphRoles[ai.packageName]
+            val glyph = if (drawn != null) Glyphs.vector(c, drawn)
+            else glyphCache[gk] ?: Glyphs.fromIcon(icon, label).also { glyphCache[gk] = it }
+            val dominant = colorCache[gk] ?: Dominant.of(icon).also { colorCache[gk] = it }
             val system = (ai.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
             val kind = roles[ai.packageName]
                 ?: if (ai.packageName.contains("weather", ignoreCase = true)) Kind.WEATHER else Kind.APP
-            out.add(AppInfo(key, label, ai.packageName, ai.name, system, icon, glyph, kind))
+            out.add(AppInfo(key, label, ai.packageName, ai.name, system, icon, glyph, kind, dominant))
         }
-        fun builtin(key: String, label: String, cls: Class<*>, glyph: Bitmap, kind: Kind) =
-            out.add(AppInfo(key, label, c.packageName, cls.name, true, null, glyph, kind))
-        builtin(Tile.SETTINGS, "metro settings", SettingsActivity::class.java, Glyphs.gear(), Kind.SETTINGS)
-        builtin(Tile.PHONE, "phone", PhoneActivity::class.java, Glyphs.phone(), Kind.PHONE)
-        builtin(Tile.MUSIC, "music", MusicActivity::class.java, Glyphs.music(), Kind.MUSIC)
-        builtin(Tile.WEATHER, "weather", WeatherActivity::class.java, Glyphs.weather(), Kind.WEATHER)
+        fun builtin(key: String, label: String, cls: Class<*>, glyph: Bitmap, kind: Kind, color: Int) =
+            out.add(AppInfo(key, label, c.packageName, cls.name, true, null, glyph, kind, color))
+        // Metro's own apps have fixed colours in icon mode.
+        builtin(Tile.SETTINGS, "metro settings", SettingsActivity::class.java, Glyphs.vector(c, R.drawable.g_settings), Kind.SETTINGS, 0xFF647687.toInt())
+        builtin(Tile.PHONE, "phone", PhoneActivity::class.java, Glyphs.vector(c, R.drawable.g_phone), Kind.PHONE, 0xFF008A00.toInt())
+        builtin(Tile.MUSIC, "music", MusicActivity::class.java, Glyphs.vector(c, R.drawable.g_music), Kind.MUSIC, 0xFFD80073.toInt())
+        builtin(Tile.WEATHER, "weather", WeatherActivity::class.java, Glyphs.weather(), Kind.WEATHER, 0xFF0050EF.toInt())
         val collator = Collator.getInstance()
         out.sortWith { a, b ->
             when {
@@ -221,52 +229,15 @@ object Glyphs {
         return bmp to Canvas(bmp)
     }
 
-    /** Classic handset: a flat handle with ear and mouth pieces, tilted. */
-    fun phone(): Bitmap {
-        val (bmp, cv) = canvas()
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        cv.rotate(-135f, SIZE / 2f, SIZE / 2f)
-        val cx = 72f
-        val cy = 112f
-        val r = 56f
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 18f
-        cv.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), 228f, 84f, false, p)
-        p.style = Paint.Style.FILL
-        for (deg in floatArrayOf(228f, 312f)) {
-            val a = Math.toRadians(deg.toDouble())
-            val ex = cx + r * Math.cos(a).toFloat()
-            val ey = cy + r * Math.sin(a).toFloat()
-            val ix = -Math.cos(a).toFloat()
-            val iy = -Math.sin(a).toFloat()
-            val px = -iy
-            val py = ix
-            val len = 30f
-            val half = 13f
-            val path = android.graphics.Path().apply {
-                moveTo(ex + px * half - ix * 6, ey + py * half - iy * 6)
-                lineTo(ex - px * half - ix * 6, ey - py * half - iy * 6)
-                lineTo(ex - px * half + ix * len, ey - py * half + iy * len)
-                lineTo(ex + px * half + ix * len, ey + py * half + iy * len)
-                close()
-            }
-            cv.drawPath(path, p)
-        }
-        return bmp
-    }
-
-    /** Two beamed notes. */
-    fun music(): Bitmap {
-        val (bmp, cv) = canvas()
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        cv.drawOval(RectF(30f, 92f, 64f, 116f), p)
-        cv.drawOval(RectF(82f, 80f, 116f, 104f), p)
-        cv.drawRect(56f, 40f, 64f, 104f, p)
-        cv.drawRect(108f, 28f, 116f, 92f, p)
-        val path = android.graphics.Path().apply {
-            moveTo(56f, 40f); lineTo(116f, 28f); lineTo(116f, 44f); lineTo(56f, 56f); close()
-        }
-        cv.drawPath(path, p)
+    /** A hand-drawn Metro glyph (res/drawable/g_*.xml, generated by tools/glyphs.py). */
+    fun vector(c: Context, res: Int): Bitmap {
+        val bmp = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+        val d = androidx.core.content.ContextCompat.getDrawable(c, res) ?: return letter("?")
+        // Same visual size as the gear and weather glyphs: the 48-unit canvas fills the bitmap.
+        val inset = (SIZE * 0.08f).toInt()
+        d.setBounds(inset, inset, SIZE - inset, SIZE - inset)
+        d.colorFilter = PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+        d.draw(Canvas(bmp))
         return bmp
     }
 
@@ -274,23 +245,6 @@ object Glyphs {
     fun weather(): Bitmap {
         val (bmp, cv) = canvas()
         WeatherArt.draw(cv, 18f, 18f, SIZE - 36f, 2, Color.WHITE)
-        return bmp
-    }
-
-    fun gear(): Bitmap {
-        val bmp = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
-        val cv = Canvas(bmp)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        val c = SIZE / 2f
-        for (i in 0 until 8) {
-            cv.save()
-            cv.rotate(i * 45f, c, c)
-            cv.drawRect(c - 8f, c - 44f, c + 8f, c - 28f, p)
-            cv.restore()
-        }
-        cv.drawCircle(c, c, 32f, p)
-        p.xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-        cv.drawCircle(c, c, 13f, p)
         return bmp
     }
 }

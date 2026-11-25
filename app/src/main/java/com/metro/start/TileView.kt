@@ -49,6 +49,7 @@ class TileView(context: Context, val tile: Tile, app0: AppInfo) : View(context) 
         set(v) {
             field = v
             iconCopy = v.icon?.constantState?.newDrawable()?.mutate()
+            refreshColor(false)
             invalidate()
         }
     private var iconCopy: Drawable? = app0.icon?.constantState?.newDrawable()?.mutate()

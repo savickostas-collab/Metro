@@ -16,7 +16,8 @@ Build locally: `./gradlew assembleRelease` → `app/build/outputs/apk/release/ap
 
 ## What's in it
 - **Start screen**: 4-column grid with 8dp gaps. Tiles come in three sizes: small 1×1, medium 2×2 and wide 4×2. Corners are square, and the background is pure black (or white in the light theme).
-- **Colors**: multi-color by default. New pins take the next palette color, and two tiles of the same color never sit
+- **Colors**: by default each tile takes the main colour of its app's icon (made bold enough for white text).
+  The other modes are multi-color, New pins take the next palette color, and two tiles of the same color never sit
   side by side. Modes are multi-color, single accent (stock WP; the accent also tints headers and toggles) and shuffle daily.
 - **Edit mode**: long-press a tile. The other tiles shrink and wobble. You can drag to reorder (the grid reflows live and scrolls at the edges),
   use ⊗ to unpin, the arrow to cycle medium → small → wide, or the mosaic button to set the tile's color (palette or any hex) and turn its live updates on or off.
@@ -50,6 +51,11 @@ Metro updates itself. Open **metro settings › updates** (or look for the badge
 It checks this repo's Releases, downloads the newest `MetroLauncher.apk` and hands it to Android's installer.
 The first time, Android asks you to allow Metro to install apps. Every build uses the same signing key,
 so it installs over the old one and keeps your tiles. Android's own "update this app?" prompt may still appear.
+
+## Glyphs
+The core apps (phone, messages, people, camera, browser, mail, maps, calendar, clock, photos, music, store, files,
+calculator, settings) get hand-drawn glyphs. They live in `tools/glyphs.py`. Run `python3 tools/glyphs.py --preview sheet.png`
+to regenerate `res/drawable/g_*.xml` and see them all on tiles.
 
 ## Notes
 - Font: Open Sans Light (SIL OFL, `app/src/main/assets/fonts/OFL.txt`) stands in for Segoe WP.

@@ -89,8 +89,10 @@ class SettingsActivity : MetroActivity() {
             prefs.dark = it == 0
             recreate()
         }
-        choice("tile colors", listOf("multi-color", "single accent", "shuffle daily"), { prefs.mode }) {
-            prefs.mode = it
+        val modes = listOf(Metro.ICON, Metro.MULTI, Metro.SINGLE, Metro.SHUFFLE)
+        choice("tile colors", listOf("app icon colors", "multi-color", "single accent", "shuffle daily"),
+            { modes.indexOf(prefs.mode).coerceAtLeast(0) }) {
+            prefs.mode = modes[it]
         }
         colorRow()
         choice("icons", listOf("white glyphs", "original icons"), { if (prefs.glyphs) 0 else 1 }) {
